@@ -18,6 +18,10 @@ interface Env {
   DB: D1Database;
   MEMORIES?: KVNamespace;
   MEMORY_QUEUE?: Queue<MemoryJob>;
+  // OAuth tokens (preferred - uses Claude Pro/Max subscription)
+  ANTHROPIC_ACCESS_TOKEN?: string;
+  ANTHROPIC_REFRESH_TOKEN?: string;
+  // Legacy API key (fallback)
   ANTHROPIC_API_KEY?: string;
 }
 
@@ -36,6 +40,89 @@ interface MemoryJob {
   user_id: string;
   content: string;
   created_at: number;
+}
+
+interface OAuthTokens {
+  access: string;
+  refresh: string;
+  expires: number;
+}
+
+// OAuth constants
+const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
+
+// Token cache (in-memory, refreshed per request if needed)
+let cachedTokens: OAuthTokens | null = null;
+
+async function getValidAccessToken(env: Env): Promise<{ token: string; isOAuth: boolean } | null> {
+  // Try OAuth first
+  if (env.ANTHROPIC_ACCESS_TOKEN && env.ANTHROPIC_REFRESH_TOKEN) {
+    // Check if we need to refresh (assume 1 hour expiry, refresh at 55 min)
+    // Since we don't persist expiry, always try to use current token first
+    // and refresh on 401
+    if (cachedTokens) {
+      if (cachedTokens.expires > Date.now() + 60_000) {
+        return { token: cachedTokens.access, isOAuth: true };
+      }
+      // Token expired, refresh
+      const refreshed = await refreshOAuthTokens(cachedTokens.refresh);
+      if (refreshed) {
+        cachedTokens = refreshed;
+        console.log("OAuth tokens refreshed. New refresh token:", refreshed.refresh.slice(0, 20) + "...");
+        return { token: refreshed.access, isOAuth: true };
+      }
+    } else {
+      // First request, use stored tokens
+      cachedTokens = {
+        access: env.ANTHROPIC_ACCESS_TOKEN,
+        refresh: env.ANTHROPIC_REFRESH_TOKEN,
+        expires: Date.now() + 55 * 60 * 1000 // Assume 55 min from now
+      };
+      return { token: cachedTokens.access, isOAuth: true };
+    }
+  }
+
+  // Fallback to API key
+  if (env.ANTHROPIC_API_KEY) {
+    return { token: env.ANTHROPIC_API_KEY, isOAuth: false };
+  }
+
+  return null;
+}
+
+async function refreshOAuthTokens(refreshToken: string): Promise<OAuthTokens | null> {
+  try {
+    const response = await fetch(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: OAUTH_CLIENT_ID
+      })
+    });
+
+    if (!response.ok) {
+      console.error("OAuth refresh failed:", response.status, await response.text());
+      return null;
+    }
+
+    const data = await response.json() as {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+    };
+
+    return {
+      access: data.access_token,
+      refresh: data.refresh_token,
+      expires: Date.now() + (data.expires_in * 1000)
+    };
+  } catch (error) {
+    console.error("OAuth refresh error:", error);
+    return null;
+  }
 }
 
 // App
@@ -88,7 +175,8 @@ app.post("/notes", async (c) => {
   const source = body.source || "api";
 
   // Determine initial memory status based on whether memory processing is available
-  const hasMemoryProcessing = c.env.MEMORIES && c.env.ANTHROPIC_API_KEY;
+  const authToken = await getValidAccessToken(c.env);
+  const hasMemoryProcessing = c.env.MEMORIES && authToken;
   const memory_status = hasMemoryProcessing ? "pending" : "skipped";
 
   await c.env.DB.prepare(
@@ -106,14 +194,15 @@ app.post("/notes", async (c) => {
       content: body.content,
       created_at,
     });
-  } else if (hasMemoryProcessing) {
+  } else if (hasMemoryProcessing && authToken) {
     // No queue available - process synchronously via waitUntil
     // This runs after response is sent, within worker lifetime
     const ctx = c.executionCtx;
     ctx.waitUntil(
       processNoteMemory(
         { note_id: id, user_id: userId, content: body.content, created_at },
-        c.env as Env & { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string }
+        c.env as Env & { MEMORIES: KVNamespace },
+        authToken
       ).then(async () => {
         await c.env.DB.prepare(
           `UPDATE notes SET memory_status = 'done' WHERE id = ?`
@@ -215,7 +304,9 @@ export default {
 
   // Queue consumer for memory processing (if queues are available)
   async queue(batch: MessageBatch<MemoryJob>, env: Env): Promise<void> {
-    if (!env.MEMORIES || !env.ANTHROPIC_API_KEY) {
+    const authToken = await getValidAccessToken(env);
+
+    if (!env.MEMORIES || !authToken) {
       console.warn("Memory processing not configured, skipping queue messages");
       for (const message of batch.messages) {
         message.ack();
@@ -227,7 +318,7 @@ export default {
       const job = message.body;
 
       try {
-        await processNoteMemory(job, env as Env & { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string });
+        await processNoteMemory(job, env as Env & { MEMORIES: KVNamespace }, authToken);
 
         // Mark as done
         await env.DB.prepare(
@@ -256,7 +347,8 @@ export default {
 // Memory processing with Claude API
 async function processNoteMemory(
   job: MemoryJob,
-  env: { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string; DB: D1Database }
+  env: { MEMORIES: KVNamespace; DB: D1Database },
+  auth: { token: string; isOAuth: boolean }
 ): Promise<void> {
   const systemPrompt = `You are helping a user maintain a personal diary/notes system.
 
@@ -278,15 +370,24 @@ Keep memories concise and useful for future context.`;
 
 ${job.content}`;
 
+  // Build headers based on auth type
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+
+  if (auth.isOAuth) {
+    headers["Authorization"] = `Bearer ${auth.token}`;
+    headers["anthropic-beta"] = "oauth-2025-04-20,context-management-2025-06-27";
+  } else {
+    headers["x-api-key"] = auth.token;
+    headers["anthropic-beta"] = "context-management-2025-06-27";
+  }
+
   // Call Anthropic API with memory tool
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "context-management-2025-06-27",
-    },
+    headers,
     body: JSON.stringify({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1024,
@@ -297,7 +398,8 @@ ${job.content}`;
   });
 
   if (!response.ok) {
-    throw new Error(`Anthropic API error: ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Anthropic API error: ${response.status} - ${errorText}`);
   }
 
   const result = await response.json() as {
@@ -335,12 +437,7 @@ ${job.content}`;
     // Continue the conversation
     const continueResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "context-management-2025-06-27",
-      },
+      headers,
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",
         max_tokens: 1024,

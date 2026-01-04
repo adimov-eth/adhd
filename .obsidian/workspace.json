@@ -194,6 +194,7 @@
   },
   "active": "4c5d768551ff7589",
   "lastOpenFiles": [
+    "docs/Clippings/OpenCode Claude OAuth Implementation.md",
     "node_modules/fsevents/fsevents.d.ts",
     "node_modules/fsevents/fsevents.node",
     "node_modules/fsevents/README.md",
@@ -206,7 +207,6 @@
     "packages/telegram-bot/wrangler.toml",
     "packages/telegram-bot/tsconfig.json",
     "packages/telegram-bot/package.json",
-    "packages/telegram-bot/src",
     "node_modules/@cloudflare/workerd-darwin-arm64/README.md",
     "node_modules/hono/README.md",
     "node_modules/typescript/SECURITY.md",
