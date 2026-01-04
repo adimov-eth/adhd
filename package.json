@@ -1,0 +1,11 @@
+{
+  "name": "adhd",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/notes-api",
+    "deploy": "npm run deploy --workspace=packages/notes-api"
+  }
+}

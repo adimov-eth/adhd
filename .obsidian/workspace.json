@@ -8,49 +8,16 @@
         "type": "tabs",
         "children": [
           {
-            "id": "da33975f2917f09a",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Artifacts/Building a self-sustaining ADHD.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Building a self-sustaining ADHD"
-            }
-          },
-          {
             "id": "4c5d768551ff7589",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Artifacts/Building a self-sustaining ADHD.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Building a self-sustaining ADHD"
-            }
-          },
-          {
-            "id": "fa2d22de817c531f",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "ADHD as a circadian rhythm disorder evidence and implications for chronotherapy"
+              "title": "New tab"
             }
           }
-        ],
-        "currentTab": 2
+        ]
       },
       {
         "id": "5598be0909555459",
@@ -139,7 +106,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -149,7 +115,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for ADHD as a circadian rhythm disorder evidence and implications for chronotherapy"
+              "title": "Backlinks"
             }
           },
           {
@@ -158,12 +124,11 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from ADHD as a circadian rhythm disorder evidence and implications for chronotherapy"
+              "title": "Outgoing links"
             }
           },
           {
@@ -201,13 +166,12 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of ADHD as a circadian rhythm disorder evidence and implications for chronotherapy"
+              "title": "Outline"
             }
           }
         ]
@@ -228,35 +192,45 @@
       "bases:Create new base": false
     }
   },
-  "active": "fa2d22de817c531f",
+  "active": "4c5d768551ff7589",
   "lastOpenFiles": [
-    "Clippings/ADHD Трененг - КОНСПЕКТЫ.md",
-    "Clippings/ADHD training notes.md",
-    "Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
-    "Clippings/The Chronobiology of Human Health.md",
-    "How to work with Cycles (gemini research).md",
-    "Тренинг ру.md",
-    "Bonus research - memory systems.md",
-    "Research 3.md",
-    "Research 2.md",
-    "Artifacts/What Helps ADHD.md",
-    "Artifacts/Few ADHD apps have real scientific evidence.md",
-    "Research 1.md",
-    "Artifacts/Voice-first AI for ADHD.md",
+    "package.json",
+    "packages/notes-api/src/worker.ts",
+    "packages/notes-api/src",
     "Artifacts/Building a self-sustaining ADHD.md",
-    "Artifacts",
-    "Chat exports/Effective therapy techniques for ADHD.md",
-    "Chat exports/Reseach on ADHD.md",
-    "Chat exports/Reseach on ADHD - Claude.html",
-    "Chat exports/Reseach on ADHD - Claude_files/df98f5517710ca2f.css",
-    "Chat exports/Reseach on ADHD - Claude_files/webpack-5596e4c93db73847.js",
+    "Research 1.md",
+    "docs/Clippings/The Chronobiology of Human Health.md",
+    "docs/Clippings/ADHD Трененг - КОНСПЕКТЫ.md",
+    "docs/Clippings/ADHD as a circadian rhythm disorder evidence and implications for chronotherapy.md",
+    "docs/Clippings/ADHD training notes.md",
+    "docs/Clippings",
+    "docs/Artifacts/What Helps ADHD.md",
+    "docs/Artifacts/Voice-first AI for ADHD.md",
+    "docs/Artifacts/Few ADHD apps have real scientific evidence.md",
+    "docs/Artifacts/Building a self-sustaining ADHD.md",
+    "docs/Artifacts",
+    "docs/How to work with Cycles (gemini research).md",
+    "docs/Bonus research - memory systems.md",
+    "docs/Research 3.md",
+    "docs/Research 2.md",
+    "docs/Research 1.md",
+    "packages/notes-api/wrangler.toml",
+    "packages/notes-api/worker.ts",
+    "packages/notes-api/tsconfig.json",
+    "packages/notes-api/schema.sql",
+    "packages/notes-api/package.json",
+    "packages/notes-api/README.md",
+    "packages/notes-api/ARCHITECTURE.md",
+    "packages/notes-api",
+    "MVP/README.md",
+    "MVP/ARCHITECTURE.md",
+    "files (9)/README.md",
+    "files (9)/ARCHITECTURE.md",
+    "How to work with Cycles (gemini research).md",
+    "CLAUDE.md",
+    "Bonus research - memory systems.md",
+    "Clippings/The Chronobiology of Human Health.md",
     "Chat exports/Reseach on ADHD - Claude_files/favicons(5).png",
-    "Chat exports/Reseach on ADHD - Claude_files/saved_resource.html",
-    "Chat exports/Reseach on ADHD - Claude_files/saved_resource(1).html",
-    "Chat exports/Reseach on ADHD - Claude_files/s.js",
-    "Chat exports/Reseach on ADHD - Claude_files/polyfills-42372ed130431b0a.js",
-    "Chat exports/Reseach on ADHD - Claude_files/main-app-87e5df653b652328.js",
-    "Chat exports/Reseach on ADHD - Claude_files/lupk8zyo",
     "Chat exports/Reseach on ADHD - Claude_files/favicons.png",
     "Chat exports/Reseach on ADHD - Claude_files/favicons(4).png",
     "Chat exports/Reseach on ADHD - Claude_files/favicons(3).png",
@@ -265,7 +239,6 @@
     "Chat exports/Effective therapy techniques for ADHD - Claude_files/favicons.png",
     "Chat exports/Effective therapy techniques for ADHD - Claude_files/favicons(4).png",
     "Chat exports/Effective therapy techniques for ADHD - Claude_files/favicons(3).png",
-    "Chat exports/Effective therapy techniques for ADHD - Claude_files/favicons(2).png",
-    "Welcome.md"
+    "Chat exports/Effective therapy techniques for ADHD - Claude_files/favicons(2).png"
   ]
 }

@@ -1,0 +1,37 @@
+# wrangler.toml
+# Cloudflare Workers configuration for Notes API
+
+name = "notes-api"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables (set via wrangler secret)
+# ANTHROPIC_API_KEY - your Anthropic API key
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "notes-db"
+database_id = "" # Fill after running: wrangler d1 create notes-db
+
+# KV Namespace for Claude's memories
+[[kv_namespaces]]
+binding = "MEMORIES"
+id = "" # Fill after running: wrangler kv:namespace create MEMORIES
+
+# Queue for async memory processing
+[[queues.producers]]
+binding = "MEMORY_QUEUE"
+queue = "notes-memory-processing"
+
+[[queues.consumers]]
+queue = "notes-memory-processing"
+max_batch_size = 1
+max_retries = 3
+dead_letter_queue = "notes-memory-dlq"
+
+# Dead letter queue for failed jobs
+[[queues.producers]]
+binding = "MEMORY_DLQ"
+queue = "notes-memory-dlq"

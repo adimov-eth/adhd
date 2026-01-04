@@ -1,0 +1,24 @@
+{
+  "name": "notes-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create notes-db",
+    "db:migrate": "wrangler d1 execute notes-db --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute notes-db --local --file=./schema.sql",
+    "kv:create": "wrangler kv:namespace create MEMORIES",
+    "queue:create": "wrangler queues create notes-memory-processing && wrangler queues create notes-memory-dlq",
+    "setup": "npm run db:create && npm run kv:create && npm run queue:create && echo 'Update wrangler.toml with the IDs printed above'",
+    "secret:set": "wrangler secret put ANTHROPIC_API_KEY"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.3.0",
+    "wrangler": "^3.0.0"
+  }
+}
