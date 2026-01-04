@@ -9,6 +9,8 @@ compatibility_flags = ["nodejs_compat"]
 # Environment variables
 [vars]
 NOTES_API_URL = "https://notes-api.boris-47d.workers.dev"
+AUDIO_PROXY_URL = "https://audio-proxy.bkk.lol"
 
 # Secrets (set via wrangler secret)
 # TELEGRAM_BOT_TOKEN - your Telegram bot token from @BotFather
+# AUDIO_PROXY_KEY - optional API key for audio-proxy (if auth enabled)
