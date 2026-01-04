@@ -9,6 +9,7 @@ interface Env {
   NOTES_API_URL: string;
   AUDIO_PROXY_URL: string;
   AUDIO_PROXY_KEY?: string;
+  WEBHOOK_SECRET?: string;
 }
 
 // Telegram types (minimal)
@@ -64,10 +65,10 @@ interface TelegramFile {
   file_path?: string;
 }
 
-interface STTJob {
+interface STTWebhookPayload {
   jobId: string;
   type: "stt";
-  status: "pending" | "processing" | "completed" | "failed";
+  status: "completed" | "failed";
   result?: string;
   error?: string;
 }
@@ -77,6 +78,60 @@ const app = new Hono<{ Bindings: Env }>();
 // Health check
 app.get("/health", (c) => {
   return c.json({ status: "ok", service: "telegram-bot" });
+});
+
+// Webhook callback from audio-proxy when STT completes
+app.post("/stt-callback", async (c) => {
+  const payload = await c.req.json() as STTWebhookPayload & {
+    metadata?: { chatId: number; userId: string }
+  };
+
+  const chatId = payload.metadata?.chatId;
+  const userId = payload.metadata?.userId;
+
+  if (!chatId || !userId) {
+    console.error("STT callback missing metadata:", payload);
+    return c.json({ ok: false, error: "missing metadata" }, 400);
+  }
+
+  if (payload.status === "failed") {
+    console.error(`STT failed for job ${payload.jobId}:`, payload.error);
+    await sendTelegramMessage(
+      c.env.TELEGRAM_BOT_TOKEN,
+      chatId,
+      "Could not transcribe voice message."
+    );
+    return c.json({ ok: true });
+  }
+
+  if (payload.status === "completed" && payload.result) {
+    const transcript = payload.result;
+
+    // Save transcript as note
+    const noteResponse = await fetch(`${c.env.NOTES_API_URL}/notes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
+      body: JSON.stringify({
+        content: transcript,
+        source: "voice",
+      }),
+    });
+
+    if (!noteResponse.ok) {
+      console.error(`Notes API error: ${noteResponse.status}`);
+      await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "Failed to save note.");
+      return c.json({ ok: true });
+    }
+
+    // Send confirmation with transcript preview
+    const preview = transcript.length > 100 ? transcript.slice(0, 100) + "..." : transcript;
+    await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, `✓ "${preview}"`);
+  }
+
+  return c.json({ ok: true });
 });
 
 // Telegram webhook endpoint
@@ -125,7 +180,10 @@ app.post("/webhook", async (c) => {
         return c.json({ ok: true });
       }
 
-      // Send to audio-proxy for transcription
+      // Build webhook URL for callback
+      const webhookUrl = new URL("/stt-callback", c.req.url).toString();
+
+      // Send to audio-proxy for transcription with webhook callback
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
@@ -138,81 +196,20 @@ app.post("/webhook", async (c) => {
         headers,
         body: JSON.stringify({
           audioUrl: fileUrl,
+          webhookUrl: webhookUrl,
+          metadata: { chatId, userId },
         }),
       });
 
       if (!sttResponse.ok) {
-        console.error(`STT API error: ${sttResponse.status}`);
-        await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "Failed to transcribe voice message.");
+        const errorText = await sttResponse.text();
+        console.error(`STT API error: ${sttResponse.status} - ${errorText}`);
+        await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "Failed to process voice message.");
         return c.json({ ok: true });
       }
 
-      const sttResult = await sttResponse.json() as STTJob;
-
-      // Poll for result (audio-proxy uses job queue)
-      let transcript: string | null = null;
-      let attempts = 0;
-      const maxAttempts = 30; // 30 seconds max
-
-      while (attempts < maxAttempts) {
-        if (sttResult.status === "completed" && sttResult.result) {
-          transcript = sttResult.result;
-          break;
-        }
-
-        if (sttResult.status === "failed") {
-          console.error(`STT failed: ${sttResult.error}`);
-          break;
-        }
-
-        // Poll job status
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const jobResponse = await fetch(`${c.env.AUDIO_PROXY_URL}/job/${sttResult.jobId}`, {
-          headers: c.env.AUDIO_PROXY_KEY ? { "X-API-Key": c.env.AUDIO_PROXY_KEY } : {},
-        });
-
-        if (jobResponse.ok) {
-          const jobStatus = await jobResponse.json() as STTJob;
-          if (jobStatus.status === "completed" && jobStatus.result) {
-            transcript = jobStatus.result;
-            break;
-          }
-          if (jobStatus.status === "failed") {
-            console.error(`STT job failed: ${jobStatus.error}`);
-            break;
-          }
-        }
-
-        attempts++;
-      }
-
-      if (!transcript) {
-        await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "Could not transcribe voice message. Please try again.");
-        return c.json({ ok: true });
-      }
-
-      // Save transcript as note
-      const noteResponse = await fetch(`${c.env.NOTES_API_URL}/notes`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": userId,
-        },
-        body: JSON.stringify({
-          content: transcript,
-          source: "voice",
-        }),
-      });
-
-      if (!noteResponse.ok) {
-        console.error(`Notes API error: ${noteResponse.status}`);
-        await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "Failed to save note.");
-        return c.json({ ok: true });
-      }
-
-      // Send confirmation with transcript preview
-      const preview = transcript.length > 100 ? transcript.slice(0, 100) + "..." : transcript;
-      await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, `✓ Saved: "${preview}"`);
+      // Return immediately - audio-proxy will callback when done
+      // No confirmation message here - we'll send it in the callback
 
     } catch (error) {
       console.error("Error processing voice message:", error);
@@ -248,7 +245,7 @@ app.post("/webhook", async (c) => {
         return c.json({ ok: true });
       }
 
-      await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "✓ Saved");
+      await sendTelegramMessage(c.env.TELEGRAM_BOT_TOKEN, chatId, "✓");
     } catch (error) {
       console.error("Error saving note:", error);
       await sendTelegramMessage(
