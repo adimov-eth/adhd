@@ -13,25 +13,25 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "notes-db"
-database_id = "" # Fill after running: wrangler d1 create notes-db
+database_id = "312f802a-da7c-4408-8a2a-0513afa06ecf"
 
 # KV Namespace for Claude's memories
 [[kv_namespaces]]
 binding = "MEMORIES"
-id = "" # Fill after running: wrangler kv:namespace create MEMORIES
+id = "1d106b1f44264857b30441408c1ff0aa"
 
-# Queue for async memory processing
-[[queues.producers]]
-binding = "MEMORY_QUEUE"
-queue = "notes-memory-processing"
+# Queue for async memory processing (requires paid plan)
+# Uncomment when upgrading to Workers Paid plan
+# [[queues.producers]]
+# binding = "MEMORY_QUEUE"
+# queue = "notes-memory-processing"
 
-[[queues.consumers]]
-queue = "notes-memory-processing"
-max_batch_size = 1
-max_retries = 3
-dead_letter_queue = "notes-memory-dlq"
+# [[queues.consumers]]
+# queue = "notes-memory-processing"
+# max_batch_size = 1
+# max_retries = 3
+# dead_letter_queue = "notes-memory-dlq"
 
-# Dead letter queue for failed jobs
-[[queues.producers]]
-binding = "MEMORY_DLQ"
-queue = "notes-memory-dlq"
+# [[queues.producers]]
+# binding = "MEMORY_DLQ"
+# queue = "notes-memory-dlq"

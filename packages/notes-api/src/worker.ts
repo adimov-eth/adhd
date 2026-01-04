@@ -16,9 +16,9 @@ function generateUlid(): string {
 // Types
 interface Env {
   DB: D1Database;
-  MEMORIES: KVNamespace;
-  MEMORY_QUEUE: Queue<MemoryJob>;
-  ANTHROPIC_API_KEY: string;
+  MEMORIES?: KVNamespace;
+  MEMORY_QUEUE?: Queue<MemoryJob>;
+  ANTHROPIC_API_KEY?: string;
 }
 
 interface Note {
@@ -39,13 +39,29 @@ interface MemoryJob {
 }
 
 // App
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
 // Middleware
 app.use("/*", cors());
 
-// Auth middleware - extract user_id from header
-app.use("/*", async (c, next) => {
+// Health check - no auth required
+app.get("/health", (c) => {
+  return c.json({ status: "ok", timestamp: Date.now() });
+});
+
+// Auth middleware for /notes routes
+app.use("/notes/*", async (c, next) => {
+  const userId = c.req.header("x-user-id");
+
+  if (!userId) {
+    return c.json({ error: "missing x-user-id header" }, 401);
+  }
+
+  c.set("userId", userId);
+  await next();
+});
+
+app.use("/notes", async (c, next) => {
   const userId = c.req.header("x-user-id");
 
   if (!userId) {
@@ -57,11 +73,6 @@ app.use("/*", async (c, next) => {
 });
 
 // Routes
-
-// Health check
-app.get("/health", (c) => {
-  return c.json({ status: "ok", timestamp: Date.now() });
-});
 
 // Create note
 app.post("/notes", async (c) => {
@@ -76,20 +87,49 @@ app.post("/notes", async (c) => {
   const created_at = Date.now();
   const source = body.source || "api";
 
+  // Determine initial memory status based on whether memory processing is available
+  const hasMemoryProcessing = c.env.MEMORIES && c.env.ANTHROPIC_API_KEY;
+  const memory_status = hasMemoryProcessing ? "pending" : "skipped";
+
   await c.env.DB.prepare(
     `INSERT INTO notes (id, user_id, content, source, created_at, memory_status)
-     VALUES (?, ?, ?, ?, ?, 'pending')`
+     VALUES (?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, userId, body.content, source, created_at)
+    .bind(id, userId, body.content, source, created_at, memory_status)
     .run();
 
-  // Queue for async memory processing
-  await c.env.MEMORY_QUEUE.send({
-    note_id: id,
-    user_id: userId,
-    content: body.content,
-    created_at,
-  });
+  // Queue for async memory processing if available
+  if (c.env.MEMORY_QUEUE) {
+    await c.env.MEMORY_QUEUE.send({
+      note_id: id,
+      user_id: userId,
+      content: body.content,
+      created_at,
+    });
+  } else if (hasMemoryProcessing) {
+    // No queue available - process synchronously via waitUntil
+    // This runs after response is sent, within worker lifetime
+    const ctx = c.executionCtx;
+    ctx.waitUntil(
+      processNoteMemory(
+        { note_id: id, user_id: userId, content: body.content, created_at },
+        c.env as Env & { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string }
+      ).then(async () => {
+        await c.env.DB.prepare(
+          `UPDATE notes SET memory_status = 'done' WHERE id = ?`
+        )
+          .bind(id)
+          .run();
+      }).catch(async (error) => {
+        console.error(`Memory processing failed for note ${id}:`, error);
+        await c.env.DB.prepare(
+          `UPDATE notes SET memory_status = 'failed', memory_error = ? WHERE id = ?`
+        )
+          .bind(error instanceof Error ? error.message : "unknown error", id)
+          .run();
+      })
+    );
+  }
 
   return c.json({ id, created_at }, 201);
 });
@@ -101,8 +141,8 @@ app.get("/notes", async (c) => {
   const cursor = c.req.query("cursor");
 
   let query = `
-    SELECT id, content, source, created_at 
-    FROM notes 
+    SELECT id, content, source, created_at
+    FROM notes
     WHERE user_id = ? AND deleted_at IS NULL
   `;
   const params: (string | number)[] = [userId];
@@ -124,8 +164,8 @@ app.get("/notes", async (c) => {
 
   return c.json({
     notes,
-    cursor: hasMore && notes.length > 0 
-      ? notes[notes.length - 1].created_at.toString() 
+    cursor: hasMore && notes.length > 0
+      ? notes[notes.length - 1].created_at.toString()
       : null,
     count: notes.length,
   });
@@ -137,8 +177,8 @@ app.get("/notes/:id", async (c) => {
   const id = c.req.param("id");
 
   const note = await c.env.DB.prepare(
-    `SELECT id, content, source, created_at 
-     FROM notes 
+    `SELECT id, content, source, created_at
+     FROM notes
      WHERE id = ? AND user_id = ? AND deleted_at IS NULL`
   )
     .bind(id, userId)
@@ -173,13 +213,21 @@ app.delete("/notes/:id", async (c) => {
 export default {
   fetch: app.fetch,
 
-  // Queue consumer for memory processing
+  // Queue consumer for memory processing (if queues are available)
   async queue(batch: MessageBatch<MemoryJob>, env: Env): Promise<void> {
+    if (!env.MEMORIES || !env.ANTHROPIC_API_KEY) {
+      console.warn("Memory processing not configured, skipping queue messages");
+      for (const message of batch.messages) {
+        message.ack();
+      }
+      return;
+    }
+
     for (const message of batch.messages) {
       const job = message.body;
 
       try {
-        await processNoteMemory(job, env);
+        await processNoteMemory(job, env as Env & { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string });
 
         // Mark as done
         await env.DB.prepare(
@@ -205,17 +253,20 @@ export default {
   },
 };
 
-// Memory processing with Claude Agent SDK
-async function processNoteMemory(job: MemoryJob, env: Env): Promise<void> {
+// Memory processing with Claude API
+async function processNoteMemory(
+  job: MemoryJob,
+  env: { MEMORIES: KVNamespace; ANTHROPIC_API_KEY: string; DB: D1Database }
+): Promise<void> {
   const systemPrompt = `You are helping a user maintain a personal diary/notes system.
 
-You have access to a memory tool that lets you organize and store information 
+You have access to a memory tool that lets you organize and store information
 that persists across conversations. Use it however you see fit.
 
-The user has just written a new note. Decide what, if anything, is worth 
+The user has just written a new note. Decide what, if anything, is worth
 remembering long-term. You might:
 - Extract key themes or insights
-- Note patterns you observe  
+- Note patterns you observe
 - Update existing memories with new context
 - Create new memory files for significant topics
 - Do nothing if the note is routine
@@ -322,7 +373,7 @@ async function executeMemoryOperation(
     insert_text?: string;
   },
   userId: string,
-  env: Env
+  env: { MEMORIES: KVNamespace }
 ): Promise<string> {
   const kvKey = (path: string) => {
     // Remove leading slash and prefix with user namespace
@@ -340,7 +391,7 @@ async function executeMemoryOperation(
         // List directory
         const prefix = kvKey("memories/");
         const list = await env.MEMORIES.list({ prefix });
-        
+
         if (list.keys.length === 0) {
           return "Directory /memories:\n(empty)";
         }
@@ -349,7 +400,7 @@ async function executeMemoryOperation(
           const relativePath = k.name.replace(`user:${userId}:`, "/");
           return `- ${relativePath}`;
         });
-        
+
         return `Directory /memories:\n${paths.join("\n")}`;
       } else {
         // Read file
